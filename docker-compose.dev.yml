@@ -1,0 +1,48 @@
+# ==============================================================================
+# ClipForge — Docker Compose Development Overrides
+# ==============================================================================
+# Usage:
+#   1. Full containerized stack with hot reload:
+#      docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+#   2. Hybrid development (Backend/Infra in Docker, Web on host with `pnpm dev`):
+#      docker compose -f docker-compose.yml -f docker-compose.dev.yml up api worker postgres redis minio
+#      cd apps/web && pnpm dev
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # FastAPI Backend API — Dev overrides
+  # ----------------------------------------------------------------------------
+  api:
+    volumes:
+      - ./apps/api:/app
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - RELOAD=true
+
+  # ----------------------------------------------------------------------------
+  # Celery Worker — Dev overrides
+  # ----------------------------------------------------------------------------
+  worker:
+    volumes:
+      - ./apps/worker:/app
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+
+  # ----------------------------------------------------------------------------
+  # Next.js Web Frontend — Dev overrides
+  # Note: No build definition here. For local frontend iteration, run `pnpm dev`
+  # directly on host for optimal Turbopack / Fast Refresh performance.
+  # If running in Docker, these volume mounts enable hot reloading.
+  # ----------------------------------------------------------------------------
+  web:
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    command: pnpm dev
+    environment:
+      - NODE_ENV=development

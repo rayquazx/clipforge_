@@ -1,0 +1,16 @@
+[project]
+name = "clipforge-worker"
+version = "0.1.0"
+description = "ClipForge Celery worker — async video-clip pipeline tasks"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "ClipForge Team"},
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

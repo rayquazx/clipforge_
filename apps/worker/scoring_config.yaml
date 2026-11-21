@@ -1,0 +1,100 @@
+# ==========================================================================
+# ClipForge — Scoring Configuration
+#
+# Defines feature weights for each clip category, merge behaviour, and
+# emote classification lists used by the analysis pipeline (Phase 3).
+# ==========================================================================
+
+categories:
+  # ------------------------------------------------------------------------
+  # Funny clips
+  # ------------------------------------------------------------------------
+  funny:
+    weights:
+      audio_loudness_spike: 0.20
+      audio_laughter: 0.30
+      transcript_humor_keywords: 0.15
+      chat_emote_density: 0.20
+      chat_lol_ratio: 0.15
+    threshold: 0.55
+
+  # ------------------------------------------------------------------------
+  # Sad / emotional clips
+  # ------------------------------------------------------------------------
+  sad:
+    weights:
+      audio_sudden_silence: 0.15
+      transcript_negative_sentiment: 0.30
+      chat_emote_density: 0.20
+      audio_pitch_drop: 0.15
+      transcript_empathy_keywords: 0.20
+    threshold: 0.50
+
+  # ------------------------------------------------------------------------
+  # Hype / exciting clips
+  # ------------------------------------------------------------------------
+  hype:
+    weights:
+      audio_loudness_spike: 0.25
+      chat_message_rate: 0.25
+      chat_emote_density: 0.20
+      transcript_exclamation_density: 0.15
+      audio_sustained_volume: 0.15
+    threshold: 0.60
+
+# --------------------------------------------------------------------------
+# Segment merge settings
+# --------------------------------------------------------------------------
+merge:
+  min_gap_seconds: 3        # merge segments closer than this
+  context_before: 7         # seconds of lead-in before a detected moment
+  context_after: 5          # seconds of tail after a detected moment
+  min_clip_duration: 10     # discard clips shorter than this (seconds)
+  max_clip_duration: 120    # hard cap on clip length (seconds)
+
+# --------------------------------------------------------------------------
+# Emote classification lists
+#
+# Used to bucket Twitch / YouTube emotes into sentiment categories so the
+# chat-analysis stage can compute per-category emote density.
+# --------------------------------------------------------------------------
+emotes:
+  funny:
+    - LUL
+    - KEKW
+    - LULW
+    - OMEGALUL
+    - PepeLaugh
+    - ICANT
+    - monkaLaugh
+    - Pepega
+    - 4Head
+    - EleGiggle
+    - PepegaChat
+    - COPIUM
+
+  sad:
+    - BibleThump
+    - Sadge
+    - PepeHands
+    - widepeepoSad
+    - FeelsBadMan
+    - NotLikeThis
+    - SadChamp
+    - Sadeg
+    - peepoSad
+    - FeelsRainMan
+
+  hype:
+    - PogChamp
+    - POGGERS
+    - Pog
+    - PogU
+    - HYPERS
+    - Kreygasm
+    - catJAM
+    - PagMan
+    - LETSGOO
+    - pepeD
+    - WICKED
+    - GuitarTime

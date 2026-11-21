@@ -1,0 +1,60 @@
+# ==============================================================================
+# ClipForge Moment Detection Scoring Weights
+# ==============================================================================
+# All weights are multiplied by the normalized signal value (0.0 - 1.0).
+# The composite funny_score and sad_score are smoothed with a moving average filter
+# and normalized per video to ensure consistent peak detection.
+
+funny:
+  # Laughter probability from audio signal (most prominent signal for comedy)
+  audio_laughter: 0.30
+
+  # Sudden loudness and energy jumps (shouting, sudden reaction)
+  audio_energy_spike: 0.20
+
+  # High-pitch screaming or explosive hype reaction
+  audio_scream: 0.10
+
+  # Live chat message velocity spike (messages per second)
+  chat_rate_spike: 0.15
+
+  # Density of funny emotes (LUL, KEKW, OMEGALUL, PogChamp)
+  chat_funny_emotes: 0.15
+
+  # Transcript positive sentiment & joy classifier output
+  transcript_positive_sentiment: 0.05
+
+  # Humor / reaction keywords ("no way", "bro", "lmao", "cant breathe")
+  transcript_reaction_keywords: 0.05
+
+  # Penalty applied if the window is dominated by background music without speech
+  music_penalty: -0.10
+
+sad:
+  # Transcript negative sentiment & sadness emotion detection
+  transcript_negative_sentiment: 0.30
+
+  # Crying, grief, or heartfelt keywords ("rip", "sad", "unfortunate", "broken")
+  transcript_sad_keywords: 0.20
+
+  # Sudden low-energy silence following high emotion or dramatic build-up
+  audio_sudden_silence: 0.15
+
+  # Low voice energy / gentle whisper after speech
+  audio_soft_energy: 0.10
+
+  # Sad chat emote density (Sadge, BibleThump, PepeHands, F)
+  chat_sad_emotes: 0.15
+
+  # Chat rate spike occurring during silence or dramatic moments
+  chat_rate_spike: 0.10
+
+smoothing:
+  # Number of neighboring 5-second windows to average (moving average window size)
+  moving_average_window: 3
+
+thresholds:
+  # Minimum peak prominence for scipy.signal.find_peaks
+  min_peak_prominence: 0.20
+  # Score threshold under which a moment build-up or fadeout terminates
+  expansion_cutoff_ratio: 0.40

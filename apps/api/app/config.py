@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     YOUTUBE_API_KEY: Optional[str] = None
     KICK_API_KEY: Optional[str] = None
 
+    # ---- Phase 4 Editing & Rendering ---------------------------------------
+    MAX_CLIP_SECONDS: float = 60.0
+    PREVIEW_PADDING_SEC: float = 5.0
+    EXPORT_RESOLUTIONS: list[str] = ["original", "1080p", "720p"]
+    SOURCE_MEDIA_RETENTION_DAYS: int = 7
+    MAX_SOURCE_RESOLUTION: str = "1080p"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

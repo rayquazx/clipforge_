@@ -1,18 +1,13 @@
 """
-ClipForge API — Clip ORM model.
-
-Each clip is a time-range slice of a parent :class:`Project` video,
-scored by the AI analysis pipeline and optionally enriched with
-subtitles, ad placements, text overlays, and music tracks before
-export.
+ClipForge Worker — Clip ORM model (Phase 4).
 """
 
 from __future__ import annotations
 
-import enum
+import uuid
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from sqlalchemy import Enum, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,68 +15,86 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.ad_placement import AdPlacement
+    from app.models.analysis import Analysis, Moment
     from app.models.export import Export, MusicTrack, TextOverlay
     from app.models.project import Project
+    from app.models.render import Render
     from app.models.transcript import TranscriptSegment
-
-
-class Category(str, enum.Enum):
-    """Detected mood category for a clip."""
-    FUNNY = "funny"
-    SAD = "sad"
-
-
-class ClipStatus(str, enum.Enum):
-    """Lifecycle status of a clip."""
-    DETECTED = "detected"
-    EDITED = "edited"
-    EXPORTED = "exported"
+    from app.models.user import User
 
 
 class Clip(UUIDMixin, TimestampMixin, Base):
-    """A detected or edited clip within a project."""
+    """A clip created from highlight moments or custom editor cuts."""
 
     __tablename__ = "clips"
 
-    # -- Parent project ------------------------------------------------------
-    project_id: Mapped["UUID"] = mapped_column(
+    # -- Ownership & Parents -------------------------------------------------
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    analysis_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("analyses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    moment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("moments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # -- Clip metadata -------------------------------------------------------
     title: Mapped[str] = mapped_column(String(300), nullable=False)
-    start_time: Mapped[float] = mapped_column(Float, nullable=False)
-    end_time: Mapped[float] = mapped_column(Float, nullable=False)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, default="custom")
+    source_start_sec: Mapped[float] = mapped_column(Float, nullable=False)
+    source_end_sec: Mapped[float] = mapped_column(Float, nullable=False)
 
-    # -- AI scores -----------------------------------------------------------
-    funny_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    sad_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    category: Mapped[Category] = mapped_column(
-        Enum(Category, name="category_enum", create_constraint=True),
-        nullable=False,
-    )
+    # -- Versioned Editor State ----------------------------------------------
+    edit_state: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
-    # -- Editor state --------------------------------------------------------
-    status: Mapped[ClipStatus] = mapped_column(
-        Enum(ClipStatus, name="clip_status_enum", create_constraint=True),
-        default=ClipStatus.DETECTED,
-        nullable=False,
+    # -- Status & Assets -----------------------------------------------------
+    status: Mapped[str] = mapped_column(String(50), default="draft", nullable=False)
+    thumbnail_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    # -- Constraints ---------------------------------------------------------
+    __table_args__ = (
+        UniqueConstraint("analysis_id", "moment_id", name="uq_clips_analysis_moment"),
+        Index("ix_clips_user_created", "user_id", "created_at"),
     )
-    editor_state: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
-    preview_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # -- Relationships -------------------------------------------------------
-    project: Mapped["Project"] = relationship(back_populates="clips")
+    user: Mapped["User"] = relationship("User", back_populates="clips")
+    project: Mapped["Project"] = relationship("Project", back_populates="clips")
+    analysis: Mapped[Optional["Analysis"]] = relationship("Analysis")
+    moment: Mapped[Optional["Moment"]] = relationship("Moment")
+    renders: Mapped[List["Render"]] = relationship(
+        "Render",
+        back_populates="clip",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="desc(Render.created_at)",
+    )
     subtitles: Mapped[List["TranscriptSegment"]] = relationship(
         back_populates="clip", lazy="selectin"
     )
-    ad_placements: Mapped[List["AdPlacement"]] = relationship(
+    exports: Mapped[List["Export"]] = relationship(
         back_populates="clip", cascade="all, delete-orphan", lazy="selectin"
     )
-    exports: Mapped[List["Export"]] = relationship(
+    ad_placements: Mapped[List["AdPlacement"]] = relationship(
         back_populates="clip", cascade="all, delete-orphan", lazy="selectin"
     )
     text_overlays: Mapped[List["TextOverlay"]] = relationship(
@@ -93,6 +106,6 @@ class Clip(UUIDMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return (
-            f"<Clip id={self.id!s} title={self.title!r} "
-            f"{self.start_time:.1f}–{self.end_time:.1f}s>"
+            f"<Clip id={self.id!s} title={self.title!r} status={self.status} "
+            f"version={self.version}>"
         )

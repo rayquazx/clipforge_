@@ -1,8 +1,5 @@
 """
-ClipForge API — User ORM model.
-
-Stores authentication credentials and profile information.
-Relationships fan out to projects, ads, and exports owned by the user.
+ClipForge Worker — User ORM model.
 """
 
 from __future__ import annotations
@@ -16,6 +13,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.ad import Ad
+    from app.models.clip import Clip
     from app.models.export import Export
     from app.models.project import Project
 
@@ -33,6 +31,9 @@ class User(UUIDMixin, TimestampMixin, Base):
 
     # -- Relationships -------------------------------------------------------
     projects: Mapped[List["Project"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="selectin"
+    )
+    clips: Mapped[List["Clip"]] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
     ads: Mapped[List["Ad"]] = relationship(

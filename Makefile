@@ -5,7 +5,7 @@
 COMPOSE_BASE = docker compose -f docker-compose.yml
 COMPOSE_DEV  = docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
-.PHONY: help up down build logs dev migrate migration shell-api shell-web clean ps restart
+.PHONY: help up down build logs dev migrate migration shell-api shell-web clean ps restart seed seed-docker
 
 # Default target
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  make dev         - Run services with development overrides & hot reload"
 	@echo "  make migrate     - Run Alembic database migrations to head"
 	@echo "  make migration   - Generate a new Alembic migration (usage: make migration m=\"message\")"
+	@echo "  make seed        - Populate complete demo dataset (Phase 4 user, project, clip, render)"
 	@echo "  make shell-api   - Open an interactive shell in the API container"
 	@echo "  make shell-web   - Open an interactive shell in the Web container"
 	@echo "  make restart     - Restart all containers"
@@ -46,6 +47,14 @@ dev:
 # Apply Alembic database migrations
 migrate:
 	$(COMPOSE_BASE) exec api alembic upgrade head
+
+# Seed complete Phase 4 demo dataset
+seed:
+	python scripts/seed_phase4.py
+
+# Seed inside Docker container
+seed-docker:
+	$(COMPOSE_BASE) exec api python scripts/seed_phase4.py
 
 # Generate a new revision with Alembic
 migration:

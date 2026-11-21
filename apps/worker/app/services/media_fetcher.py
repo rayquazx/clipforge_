@@ -272,3 +272,258 @@ def chunk_audio_file(
         index += 1
 
     return chunks
+
+
+# ==============================================================================
+# Phase 4 Source Media Caching, Lazy Downloading & Storage Cleanup
+# ==============================================================================
+# LEGAL NOTICE: ClipForge is intended only for video and stream content that you
+# own or have explicit legal authorization to use. Always respect intellectual
+# property rights and third-party platform Terms of Service.
+# ==============================================================================
+
+import uuid
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import delete, func, select
+from app.database import AsyncSessionLocal
+from app.models.project import Project
+from app.models.render import Render
+from app.models.source_media import SourceMedia
+from app.render.runner import probe_media_file
+import redis.asyncio as aioredis
+
+
+class SourceUnavailableError(MediaFetchError):
+    """Raised when source media cannot be retrieved (private, deleted, geo-blocked, etc.)."""
+    pass
+
+
+async def ensure_video(
+    project_id: uuid.UUID | str,
+    start_sec: Optional[float] = None,
+    end_sec: Optional[float] = None,
+    padding_sec: float = 15.0,
+    max_resolution: str = "1080p",
+) -> Tuple[SourceMedia, str]:
+    """
+    Ensure the source video (or requested time slice) is available in MinIO and cached locally.
+    Uses Redis locking to prevent concurrent redundant downloads.
+    """
+    p_id = uuid.UUID(str(project_id))
+    minio_client = get_minio_client()
+
+    async with AsyncSessionLocal() as session:
+        # 1. Check existing cached source_media in database
+        stmt = select(SourceMedia).where(
+            SourceMedia.project_id == p_id,
+            SourceMedia.status == "ready",
+        )
+        res = await session.execute(stmt)
+        candidates = res.scalars().all()
+
+        # Check for full video or covering range
+        for sm in candidates:
+            if sm.covered_range is None:
+                # Full video covers all ranges
+                sm.last_used_at = datetime.now(timezone.utc)
+                await session.commit()
+                local_path = os.path.join(tempfile.gettempdir(), f"cf_src_{sm.id}.mp4")
+                if not os.path.exists(local_path):
+                    download_file(minio_client, settings.minio_bucket, sm.storage_key, local_path)
+                return sm, local_path
+
+            if start_sec is not None and end_sec is not None:
+                c_start = sm.covered_range.get("start", 0.0)
+                c_end = sm.covered_range.get("end", 0.0)
+                if c_start <= start_sec and c_end >= end_sec:
+                    sm.last_used_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    local_path = os.path.join(tempfile.gettempdir(), f"cf_src_{sm.id}.mp4")
+                    if not os.path.exists(local_path):
+                        download_file(minio_client, settings.minio_bucket, sm.storage_key, local_path)
+                    return sm, local_path
+
+        # 2. Acquire Redis distributed lock
+        r = aioredis.from_url(settings.redis_url)
+        lock_key = f"lock:source_media:{p_id}"
+        lock_acquired = False
+        try:
+            for _ in range(60):  # Wait up to 60 seconds
+                lock_acquired = await r.set(lock_key, "1", nx=True, ex=600)
+                if lock_acquired:
+                    break
+                await asyncio.sleep(1.0)
+        except Exception:
+            lock_acquired = True  # Proceed if Redis offline
+
+        try:
+            # Re-check if another worker finished it while waiting
+            res = await session.execute(stmt)
+            for sm in res.scalars().all():
+                if sm.covered_range is None or (
+                    start_sec is not None and end_sec is not None and
+                    sm.covered_range.get("start", 0.0) <= start_sec and
+                    sm.covered_range.get("end", 0.0) >= end_sec
+                ):
+                    sm.last_used_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    local_path = os.path.join(tempfile.gettempdir(), f"cf_src_{sm.id}.mp4")
+                    if not os.path.exists(local_path):
+                        download_file(minio_client, settings.minio_bucket, sm.storage_key, local_path)
+                    return sm, local_path
+
+            # Fetch Project to get source URL / type
+            p_res = await session.execute(select(Project).where(Project.id == p_id))
+            project = p_res.scalars().first()
+            if not project:
+                raise MediaFetchError(f"Project {p_id} not found.")
+
+            # Create new SourceMedia entry
+            new_media_id = uuid.uuid4()
+            temp_download_dir = tempfile.mkdtemp(prefix=f"cf_dl_{new_media_id}_")
+            target_download_path = os.path.join(temp_download_dir, "downloaded.mp4")
+
+            res_limit = "1080" if "1080" in max_resolution else "720"
+            covered_range = None
+
+            # Handle direct upload
+            if project.source_type == "upload" or (project.source_url and project.source_url.startswith("upload://")):
+                key = project.raw_video_key or project.source_url.replace("upload://", "").replace("minio://", "")
+                download_file(minio_client, settings.minio_bucket, key, target_download_path)
+            else:
+                # External stream / video via yt-dlp
+                format_opt = f"bestvideo[height<={res_limit}]+bestaudio/best[height<={res_limit}]/best"
+                cmd = [
+                    "yt-dlp",
+                    "--no-playlist",
+                    "-f", format_opt,
+                    "--merge-output-format", "mp4",
+                    "--output", target_download_path,
+                ]
+
+                # Attempt range download if start & end are specified
+                if start_sec is not None and end_sec is not None:
+                    req_start = max(0.0, start_sec - padding_sec)
+                    req_end = end_sec + padding_sec
+                    if project.duration_seconds:
+                        req_end = min(float(project.duration_seconds), req_end)
+                    range_cmd = list(cmd) + [
+                        "--download-sections", f"*{req_start:.2f}-{req_end:.2f}",
+                        "--force-keyframes-at-cuts",
+                        project.source_url or "",
+                    ]
+                    try:
+                        proc = await asyncio.create_subprocess_exec(
+                            *range_cmd,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        stdout, stderr = await proc.communicate()
+                        if proc.returncode == 0 and os.path.exists(target_download_path):
+                            covered_range = {"start": req_start, "end": req_end}
+                    except Exception:
+                        pass
+
+                # If range download didn't produce file, fall back to full download
+                if not os.path.exists(target_download_path):
+                    full_cmd = list(cmd) + [project.source_url or ""]
+                    proc = await asyncio.create_subprocess_exec(
+                        *full_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode != 0:
+                        err_text = (stderr.decode("utf-8", errors="replace") + stdout.decode("utf-8", errors="replace")).lower()
+                        if "private" in err_text:
+                            raise SourceUnavailableError("This video is private and cannot be downloaded.")
+                        elif "subscriber" in err_text or "sub-only" in err_text:
+                            raise SourceUnavailableError("This video is subscriber-only.")
+                        elif "not found" in err_text or "deleted" in err_text or "404" in err_text:
+                            raise SourceUnavailableError("The video does not exist or has been removed from the platform.")
+                        elif "geo" in err_text or "blocked" in err_text or "country" in err_text:
+                            raise SourceUnavailableError("The video is geo-restricted or blocked in this region.")
+                        else:
+                            raise SourceUnavailableError(f"Failed to download source media: {err_text[:200]}")
+
+            # Inspect media
+            probe = probe_media_file(target_download_path)
+
+            # Store in MinIO
+            storage_key = f"source_media/{p_id}/{new_media_id}.mp4"
+            upload_file(
+                minio_client,
+                settings.minio_bucket,
+                storage_key,
+                target_download_path,
+                content_type="video/mp4",
+            )
+
+            # Record in source_media table
+            source_media = SourceMedia(
+                id=new_media_id,
+                project_id=p_id,
+                kind="video",
+                storage_key=storage_key,
+                status="ready",
+                width=probe["width"],
+                height=probe["height"],
+                duration_sec=probe["duration"],
+                format="mp4",
+                covered_range=covered_range,
+                last_used_at=datetime.now(timezone.utc),
+            )
+            session.add(source_media)
+            await session.commit()
+            await session.refresh(source_media)
+
+            return source_media, target_download_path
+
+        finally:
+            if lock_acquired:
+                try:
+                    await r.delete(lock_key)
+                    await r.aclose()
+                except Exception:
+                    pass
+
+
+async def cleanup_unused_source_media(retention_days: int = 7) -> int:
+    """
+    Deletes cached source media unused for N days.
+    Never deletes media belonging to projects with active jobs (queued, downloading, rendering).
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    minio_client = get_minio_client()
+    deleted_count = 0
+
+    async with AsyncSessionLocal() as session:
+        # Find active project IDs
+        active_renders_res = await session.execute(
+            select(Clip.project_id)
+            .join(Render, Render.clip_id == Clip.id)
+            .where(Render.status.in_(["queued", "downloading", "rendering"]))
+        )
+        active_project_ids = set(active_renders_res.scalars().all())
+
+        # Find stale media
+        stale_res = await session.execute(
+            select(SourceMedia).where(
+                SourceMedia.last_used_at < cutoff,
+                SourceMedia.project_id.not_in(active_project_ids) if active_project_ids else True,
+            )
+        )
+        stale_media = stale_res.scalars().all()
+
+        for sm in stale_media:
+            try:
+                minio_client.remove_object(settings.minio_bucket, sm.storage_key)
+            except Exception as exc:
+                logger.warning("Failed to remove MinIO object %s: %s", sm.storage_key, exc)
+
+            await session.delete(sm)
+            deleted_count += 1
+
+        await session.commit()
+
+    return deleted_count

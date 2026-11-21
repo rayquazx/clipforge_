@@ -286,6 +286,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from app.database import AsyncSessionLocal
+from app.models.clip import Clip
 from app.models.project import Project
 from app.models.render import Render
 from app.models.source_media import SourceMedia

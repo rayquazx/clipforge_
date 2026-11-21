@@ -1,0 +1,15 @@
+{
+  "name": "clipforge-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @clipforge/web dev",
+    "build": "pnpm --filter @clipforge/web build",
+    "start": "pnpm --filter @clipforge/web start",
+    "gen:types": "pnpm --filter @clipforge/shared gen:types"
+  },
+  "msw": {
+    "workerDirectory": [
+      "apps\\web\\public"
+    ]
+  }
+}

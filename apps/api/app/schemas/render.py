@@ -13,10 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class RenderOptions(BaseModel):
     """Rendering options for a clip."""
-    resolution: Literal["original", "1080p", "720p"] = "original"
+    resolution: Literal["original", "1080p", "720p", "360p"] = "original"
     fps: Union[Literal["original"], Literal[30], Literal[60]] = "original"
     quality: Literal["high", "medium", "small"] = "high"
     filename: Optional[str] = None
+    include_srt: bool = False
+    is_preview: bool = False
 
 
 class CreateRenderRequest(BaseModel):

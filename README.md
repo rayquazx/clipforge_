@@ -80,6 +80,124 @@ docker-compose up --build
 
 ---
 
+## Phase 4: Clips, Previews & Export Engine
+
+### 1. Service Ports
+- **Frontend Web App**: [http://localhost:3000](http://localhost:3000)
+- **FastAPI Backend & OpenAPI Docs**: [http://localhost:8000](http://localhost:8000) (Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs), OpenAPI JSON: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json))
+- **MinIO S3 Web Console**: [http://localhost:9001](http://localhost:9001) (User: `minioadmin`, Pass: `minioadmin`)
+- **MinIO S3 API**: `http://localhost:9000`
+- **PostgreSQL**: `localhost:5432`
+- **Redis Broker**: `localhost:6379`
+*(Note: ClipForge does not use port 8080)*
+
+### 2. FFmpeg Requirements
+- FFmpeg 5.x+ with `libx264` and `aac` encoders enabled.
+- `ffprobe` in system PATH for duration, stream, and resolution extraction.
+- Installed and configured out-of-the-box inside the Docker container stack.
+
+### 3. Object Storage Layout
+Stored in the configured MinIO S3 bucket (`clipforge`):
+- `source_media/{project_id}/{media_id}.mp4` — Full or range-cached source video downloads.
+- `previews/{clip_id}/proxy_480p.mp4` — Low-bitrate H.264 proxy with padded boundaries for timeline scrubbing.
+- `previews/{clip_id}/waveform.json` — Precomputed normalized audio peaks (0..1) for the audio waveform track.
+- `previews/{clip_id}/thumbnails.jpg` — Sprite sheet with low-resolution video frames at regular intervals.
+- `previews/{clip_id}/thumbnail.jpg` — Representative middle frame for clip cards.
+- `renders/{clip_id}/{render_id}.mp4` — Final rendered, frame-accurate exported clip.
+
+### 4. Caching & Automated Cleanup
+- **Source Media Lazy Fetch**: Range downloads (`yt-dlp --download-sections`) with a Redis distributed lock prevent duplicate concurrent downloads for the same source video.
+- **Storage Cleanup Job**: `media.cleanup_unused` runs periodically to remove cached source media older than `SOURCE_MEDIA_RETENTION_DAYS` (default 7 days). It safely skips any source media associated with currently active jobs (`queued`, `downloading`, `rendering`).
+
+### 5. Environment Variables
+Add to your `.env` file as needed:
+```env
+MAX_CLIP_SECONDS=180
+PREVIEW_PADDING_SEC=5.0
+SOURCE_MEDIA_RETENTION_DAYS=7
+MAX_SOURCE_RESOLUTION=1080p
+```
+
+### 6. Development Seed Data
+To populate real data for frontend development (creates a demo user, project, analysis, detected moments, ready clip with precomputed preview, waveform, sprite thumbnails, and a completed render):
+```bash
+# If running locally with Python:
+make seed
+
+# If running within Docker stack:
+make seed-docker
+```
+Demo user credentials created by seed:
+- **Email**: `streamer@clipforge.tv`
+- **Password**: `clipforge123`
+
+### 7. API Contract & cURL Examples
+
+#### Retrieve Server Configuration
+```bash
+curl -X GET http://localhost:8000/config
+```
+
+#### List Clips with Filtering & Pagination
+```bash
+curl -X GET "http://localhost:8000/clips?category=funny&sort=newest&page=1&limit=10" \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+#### Create Clips from Detected Moments (Idempotent)
+```bash
+curl -X POST "http://localhost:8000/analyses/{analysis_id}/clips" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"moment_ids": ["<MOMENT_ID>"]}'
+```
+
+#### Patch Clip with Optimistic Concurrency
+```bash
+curl -X PATCH "http://localhost:8000/clips/{clip_id}" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Epic Victory Royale",
+    "edit_state": {
+      "schema_version": 1,
+      "trim": {"start": 10.5, "end": 45.0}
+    },
+    "version": 1
+  }'
+```
+*Note: If `version` does not match the database version, returns HTTP `409 Conflict` with `details.current_clip`.*
+
+#### Stream Preview Video (Supports HTTP 206 Partial Content Range Requests)
+```bash
+curl -X GET "http://localhost:8000/clips/{clip_id}/preview/video" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Range: bytes=0-1048576" -o chunk.mp4
+```
+
+#### Trigger Frame-Accurate Render
+```bash
+curl -X POST "http://localhost:8000/clips/{clip_id}/renders" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "options": {
+      "resolution": "1080p",
+      "fps": 60,
+      "quality": "high",
+      "filename": "my_highlight.mp4"
+    }
+  }'
+```
+
+#### Real-time Server-Sent Events (SSE)
+```bash
+curl -N -X GET "http://localhost:8000/events/stream?clip_id={clip_id}" \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+---
+
 ## Phase 3: Manual Testing Guide
 
 1. Open **[http://localhost:3000](http://localhost:3000)** and sign in.
@@ -99,7 +217,98 @@ docker-compose up --build
 
 ---
 
-## Running Automated Tests
+## Phase 4: Frontend Web App (`/apps/web`)
+
+The ClipForge frontend is built with **Next.js 14 App Router**, **TypeScript**, **Tailwind CSS**, **TanStack React Query**, and **Zustand**.
+
+### 1. Running with Mocks vs Real Backend
+
+You can toggle between fully isolated Mock Service Worker (MSW) mocking and the live FastAPI backend using the environment variable `NEXT_PUBLIC_USE_MOCKS`:
+
+#### Mode A: Running entirely with MSW Mocks (No backend required)
+```bash
+# In apps/web/.env.local (or terminal)
+NEXT_PUBLIC_USE_MOCKS=true
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Start development server
+pnpm --filter @clipforge/web dev
+```
+In mock mode:
+- MSW intercepts all contract endpoints (`/clips`, `/config`, `/events/stream`, `/renders`, etc.).
+- A public sample MP4 (`/mock/sample.mp4`) is streamed with HTTP Range support.
+- Waveforms, thumbnail sprite strips (`/mock/sprite.png`), and optimistic concurrency (409) conflict flows are fully simulated.
+
+#### Mode B: Running with the Real Backend
+```bash
+# In apps/web/.env.local (or terminal)
+NEXT_PUBLIC_USE_MOCKS=false
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Start development server
+pnpm --filter @clipforge/web dev
+```
+All requests communicate directly with the live FastAPI service on port 8000 and MinIO object storage.
+
+### 2. Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend API base URL |
+| `NEXT_PUBLIC_USE_MOCKS` | `false` | When `true`, enables MSW mocking in the browser |
+
+### 3. Editor Modules Folder Structure
+
+```
+apps/web/src/
+├── app/
+│   ├── clips/
+│   │   ├── layout.tsx                # Auth guard, sidebar & header layout for clips
+│   │   ├── page.tsx                  # Clip Library: grid/list, filter, search, sort, bulk actions
+│   │   └── [id]/
+│   │       └── page.tsx              # Clip Editor: player, timeline, controls, details, autosave
+│   ├── projects/[id]/page.tsx        # Project page: moment detection, custom clip modal, batch creation
+│   └── layout.tsx                    # Root layout with MSW Provider & Toast Provider
+├── components/
+│   ├── editor/
+│   │   ├── EditorPlayer.tsx          # Video player: preview states, looping, time mapping, speed
+│   │   ├── EditorTimeline.tsx        # Timeline: waveform canvas, sprite strip, draggable trim handles
+│   │   ├── EditorTrimControls.tsx    # Numeric inputs (HH:MM:SS.mmm), nudge (-1s/0.1s), play trimmed
+│   │   ├── EditorDetailsPanel.tsx    # Title, category, score, transcript, render history
+│   │   ├── EditorExportDialog.tsx    # Export dialog: resolution, fps, quality, filename validation
+│   │   ├── EditorRenderProgress.tsx  # Live progress stages, progress bar, cancel, download button
+│   │   ├── EditorConflictDialog.tsx  # 409 conflict dialog ("This clip was changed elsewhere")
+│   │   └── useEditorShortcuts.ts     # Keyboard shortcuts (Space, I, O, arrows, J/K/L, Ctrl+S, Undo)
+│   ├── clips/
+│   │   └── BulkResultModal.tsx       # Bulk export/delete accepted and skipped items dialog
+│   └── projects/
+│       └── CreateCustomClipModal.tsx # Custom clip modal with video duration & /config validation
+├── hooks/
+│   ├── useEventStream.ts             # SSE EventSource hook with reconnect & 3s polling fallback
+│   └── useAuth.ts                    # Zustand auth store hook with single-mount loadUser guard
+├── lib/
+│   ├── api.ts                        # Typed API client with central error handler (ApiError, 409 conflict)
+│   └── time-mapping.ts               # Source <-> preview time conversion, formatting, parsing, snapping
+├── mocks/
+│   ├── browser.ts                    # MSW setupWorker initialization
+│   ├── handlers.ts                   # Realistic MSW request handlers for all contract endpoints
+│   └── mock-data.ts                  # Seed mock projects, analyses, moments, clips, renders
+└── stores/
+    ├── auth-store.ts                 # Auth session & token store
+    └── editor-store.ts               # Clip editor state, 50-step undo/redo history, playback state
+```
+
+### 4. Running Frontend Tests
+
+```bash
+# Run unit & component tests (Vitest + React Testing Library)
+pnpm --filter @clipforge/web test
+
+# Run End-to-End browser tests on mocks (Playwright)
+pnpm --filter @clipforge/web test:e2e
+```
+
+---
 
 ```bash
 # Run API tests (FastAPI + mock auth & DB)

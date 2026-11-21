@@ -62,13 +62,13 @@ class AnalysisResponse(BaseModel):
     id: UUID
     project_id: UUID
     mode: str
-    min_clip_seconds: int
-    max_clip_seconds: int
-    max_clips: int
+    min_clip_seconds: Optional[int] = 15
+    max_clip_seconds: Optional[int] = 60
+    max_clips: Optional[int] = 10
     language: Optional[str] = "auto"
     status: str
     stage: Optional[str] = "queued"
-    progress: int = 0
+    progress: Optional[int] = 0
     error_message: Optional[str] = None
     config_snapshot: Optional[dict[str, Any]] = None
     created_at: datetime

@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 import { QueryProvider } from "@/components/providers/QueryProvider";
-
-const inter = Inter({ subsets: ["latin"] });
+import { MswProvider } from "@/components/providers/MswProvider";
 
 export const metadata: Metadata = {
   title: "ClipForge — AI Stream & Video Highlight Clipper",
@@ -19,9 +17,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} min-h-screen antialiased bg-background text-text-primary`}>
+      <body className="min-h-screen antialiased bg-background text-text-primary font-sans">
         <QueryProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <MswProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </MswProvider>
         </QueryProvider>
       </body>
     </html>

@@ -10,8 +10,10 @@ import {
   ExternalLink,
   MessageSquareQuote,
   Clock,
+  Scissors,
+  CheckCircle2,
 } from "lucide-react";
-import { Moment } from "@/types";
+import { Moment, Clip } from "@/types";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { formatDuration } from "@/lib/utils";
@@ -20,20 +22,28 @@ interface MomentCardProps {
   moment: Moment;
   isSelected: boolean;
   isActive: boolean;
+  existingClip?: Clip | null;
+  isCreating?: boolean;
   onSelectToggle: (id: string) => void;
   onPlayClick: (startSec: number) => void;
   onTimeChange: (id: string, newStart: number, newEnd: number) => void;
   onRemove: (id: string) => void;
+  onCreateClip?: (moment: Moment) => void;
+  onOpenInEditor?: (moment: Moment) => void;
 }
 
 export function MomentCard({
   moment,
   isSelected,
   isActive,
+  existingClip,
+  isCreating,
   onSelectToggle,
   onPlayClick,
   onTimeChange,
   onRemove,
+  onCreateClip,
+  onOpenInEditor,
 }: MomentCardProps) {
   const [isEditingTime, setIsEditingTime] = React.useState(false);
   const [startTime, setStartTime] = React.useState(moment.start_sec);
@@ -181,14 +191,39 @@ export function MomentCard({
 
         {/* Card Footer Actions */}
         <div className="flex items-center gap-2">
-          {/* Disabled Open in Editor button as specified in prompt */}
+          {existingClip ? (
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20">
+              <CheckCircle2 className="w-3 h-3" />
+              Clip Created
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              isLoading={isCreating}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreateClip?.(moment);
+              }}
+              className="h-7 text-[11px] px-2.5 gap-1.5"
+            >
+              <Scissors className="w-3 h-3" />
+              Create Clip
+            </Button>
+          )}
+
           <Button
             size="sm"
-            variant="outline"
-            disabled
-            className="h-7 text-[11px] px-2.5 opacity-50 cursor-not-allowed"
+            variant={existingClip ? "primary" : "outline"}
+            isLoading={isCreating}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenInEditor?.(moment);
+            }}
+            className="h-7 text-[11px] px-2.5 gap-1.5"
           >
-            Open in editor (Coming in Phase 4)
+            <span>Open in Editor</span>
+            <ExternalLink className="w-3 h-3" />
           </Button>
 
           <button

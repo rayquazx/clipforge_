@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   PlusCircle,
+  Scissors,
   Megaphone,
   Download,
   Settings,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "New Project", href: "/projects/new", icon: PlusCircle },
+  { label: "Clips", href: "/clips", icon: Scissors },
   { label: "Ad Library", href: "/ads", icon: Megaphone },
   { label: "Exports", href: "/exports", icon: Download },
   { label: "Settings", href: "/settings", icon: Settings },

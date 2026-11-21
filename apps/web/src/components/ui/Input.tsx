@@ -10,7 +10,9 @@ export interface InputProps
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, label, error, helperText, ...props }, ref) => {
+  ({ className, type, label, error, helperText, id, ...props }, ref) => {
+    const reactId = React.useId();
+    const inputId = id || reactId;
     const [showPassword, setShowPassword] = React.useState(false);
     const isPassword = type === "password";
 
@@ -23,12 +25,13 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full space-y-1.5">
         {label && (
-          <label className="block text-xs font-medium text-text-secondary">
+          <label htmlFor={inputId} className="block text-xs font-medium text-text-secondary">
             {label}
           </label>
         )}
         <div className="relative">
           <input
+            id={inputId}
             type={inputType}
             ref={ref}
             className={cn(

@@ -33,7 +33,7 @@ class ProjectResponse(BaseModel):
     thumbnail_url: Optional[str] = None
     published_at: Optional[datetime] = None
     status: str
-    progress: int = 0
+    progress: Optional[int] = 0
     error_message: Optional[str] = None
     raw_video_key: Optional[str] = None
     created_at: datetime

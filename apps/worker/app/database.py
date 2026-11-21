@@ -17,3 +17,7 @@ async_session_factory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+# Alias for compatibility with AsyncSessionLocal convention
+AsyncSessionLocal = async_session_factory
+

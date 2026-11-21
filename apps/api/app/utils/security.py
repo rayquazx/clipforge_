@@ -1,21 +1,18 @@
 """
 ClipForge API — password hashing and JWT token utilities.
 
-Uses ``passlib`` with bcrypt for password storage and ``python-jose``
+Uses ``bcrypt`` directly for stable password hashing and ``python-jose``
 for JWT creation and verification.
 """
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
 from app.schemas.auth import TokenData
-
-# Bcrypt context — auto-handles salt generation and verification.
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ---------------------------------------------------------------------------
@@ -24,12 +21,24 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def hash_password(password: str) -> str:
     """Return a bcrypt hash of the plain-text *password*."""
-    return _pwd_context.hash(password)
+    pwd_bytes = password.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
+
+
+# Alias for compatibility
+get_password_hash = hash_password
+
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Check *plain_password* against a stored bcrypt *hashed_password*."""
-    return _pwd_context.verify(plain_password, hashed_password)
+    try:
+        pwd_bytes = plain_password.encode("utf-8")[:72]
+        hash_bytes = hashed_password.encode("utf-8")
+        return bcrypt.checkpw(pwd_bytes, hash_bytes)
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -70,16 +79,7 @@ def create_refresh_token(
     data: dict[str, str],
     expires_delta: Optional[timedelta] = None,
 ) -> str:
-    """
-    Create a signed JWT refresh token with a longer lifetime.
-
-    Parameters
-    ----------
-    data:
-        Claims to encode — must include ``"sub"`` with the user ID.
-    expires_delta:
-        Custom lifetime.  Defaults to the value from settings.
-    """
+    """Create a long-lived signed JWT refresh token."""
     settings = get_settings()
     to_encode = data.copy()
 
@@ -98,29 +98,18 @@ def create_refresh_token(
 
 def decode_token(token: str) -> TokenData:
     """
-    Decode and validate a JWT token.
+    Decode and validate a signed JWT string.
 
-    Returns a :class:`TokenData` with the ``user_id`` extracted from
-    the ``"sub"`` claim.
-
-    Raises
-    ------
-    ValueError
-        If the token is expired, malformed, or missing the ``sub`` claim.
+    Raises ``JWTError`` if the signature is invalid or the token has
+    expired.
     """
     settings = get_settings()
-
-    try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-        )
-    except JWTError as exc:
-        raise ValueError(f"Invalid token: {exc}") from exc
-
+    payload = jwt.decode(
+        token,
+        settings.JWT_SECRET_KEY,
+        algorithms=[settings.JWT_ALGORITHM],
+    )
     user_id: Optional[str] = payload.get("sub")
     if user_id is None:
-        raise ValueError("Token is missing the 'sub' claim.")
-
+        raise JWTError("Token payload missing subject ('sub') claim.")
     return TokenData(user_id=user_id)

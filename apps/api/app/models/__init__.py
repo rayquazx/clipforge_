@@ -13,6 +13,9 @@ from app.models.transcript import ChatMessage, TranscriptSegment  # noqa: F401
 from app.models.ad import Ad, AdType  # noqa: F401
 from app.models.ad_placement import AdPlacement, PlacementType  # noqa: F401
 from app.models.export import Export, ExportStatus, MusicTrack, TextOverlay  # noqa: F401
+from app.models.subtitle_style import SubtitleStyle  # noqa: F401
+from app.models.audio_asset import AudioAsset  # noqa: F401
+from app.models.edit_version import EditVersion  # noqa: F401
 
 __all__ = [
     "Base",
@@ -41,4 +44,7 @@ __all__ = [
     "ExportStatus",
     "MusicTrack",
     "TextOverlay",
+    "SubtitleStyle",
+    "AudioAsset",
+    "EditVersion",
 ]

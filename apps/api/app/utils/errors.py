@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,7 +35,10 @@ class AppError(StarletteHTTPException):
         }
         if self.details is not None:
             data["details"] = self.details
-        return {"error": data}
+        return {
+            "error": data,
+            "detail": self.message,
+        }
 
 
 class NotFoundError(AppError):
@@ -80,7 +84,7 @@ class RateLimitedError(AppError):
 
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     """Handle custom AppError exceptions."""
-    return JSONResponse(status_code=exc.status_code, content=exc.to_dict())
+    return JSONResponse(status_code=exc.status_code, content=jsonable_encoder(exc.to_dict()))
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -117,5 +121,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
     message = str(exc.detail) if exc.detail else "An error occurred."
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": {"code": code, "message": message}},
+        content={
+            "error": {"code": code, "message": message},
+            "detail": message,
+        },
     )

@@ -39,7 +39,14 @@ dist/
 .vercel/
 
 # TypeScript declaration cache
-*.tsbuildinfo
+# Video transport streams (except TypeScript source files)
+*.ts
+!*.tsx
+!**/src/**/*.ts
+!**/packages/**/*.ts
+!**/scripts/**/*.ts
+!**/config/**/*.ts
+!*config.tsbuildinfo
 next-env.d.ts
 
 # ------------------------------------------------------------------------------
@@ -60,8 +67,8 @@ develop-eggs/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -130,7 +137,14 @@ processed_clips/
 *.mkv
 *.webm
 *.avi
+# Video transport streams (except TypeScript source files)
 *.ts
+!*.tsx
+!**/src/**/*.ts
+!**/packages/**/*.ts
+!**/scripts/**/*.ts
+!**/config/**/*.ts
+!*config.ts
 *.m3u8
 *.wav
 *.mp3

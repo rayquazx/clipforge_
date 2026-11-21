@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -13,22 +13,25 @@ import {
   RotateCw,
   Sparkles,
   Layers,
+  Scissors,
 } from "lucide-react";
-import { Project, Analysis, Moment, SignalWindow } from "@/types";
+import { Project, Analysis, Moment, SignalWindow, Clip } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/components/ui/Toast";
 import { formatDuration, formatDate } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { apiClient } from "@/lib/api";
 
 import { AnalyzePanel } from "@/components/analysis/AnalyzePanel";
 import { AnalysisProgressView } from "@/components/analysis/AnalysisProgressView";
 import { EmbeddedPlayer } from "@/components/analysis/EmbeddedPlayer";
 import { MomentsTimelineChart } from "@/components/analysis/MomentsTimelineChart";
 import { MomentCard } from "@/components/analysis/MomentCard";
+import { CreateCustomClipModal } from "@/components/projects/CreateCustomClipModal";
 import { useAnalysisEvents } from "@/hooks/useAnalysisEvents";
 
 export default function ProjectDetailPage() {
+  const router = useRouter();
   const params = useParams();
   const projectId = params?.id as string;
   const queryClient = useQueryClient();
@@ -39,6 +42,8 @@ export default function ProjectDetailPage() {
   const [selectedMomentIds, setSelectedMomentIds] = React.useState<Set<string>>(new Set());
   const [activeMomentId, setActiveMomentId] = React.useState<string | null>(null);
   const [isStartingAnalysis, setIsStartingAnalysis] = React.useState(false);
+  const [isCustomClipModalOpen, setIsCustomClipModalOpen] = React.useState(false);
+  const [isCreatingClips, setIsCreatingClips] = React.useState(false);
 
   // 1. Fetch Project Details
   const { data: project, isLoading: isProjectLoading, isError: isProjectError } = useQuery<Project>({
@@ -108,6 +113,46 @@ export default function ProjectDetailPage() {
     },
     enabled: !!currentAnalysis?.id && currentAnalysis.status === "ready",
   });
+
+  // 6. Fetch existing Clips for this project
+  const { data: projectClips = [], refetch: refetchProjectClips } = useQuery<Clip[]>({
+    queryKey: ["project-clips", projectId],
+    queryFn: async () => {
+      const res = await apiClient.getClips({ project_id: projectId });
+      return res.items;
+    },
+    enabled: !!projectId,
+  });
+
+  // Clip creation handlers
+  const handleCreateClips = async (momentIds: string[]) => {
+    if (!currentAnalysis?.id || momentIds.length === 0) return;
+    setIsCreatingClips(true);
+    try {
+      const res = await apiClient.createClipsFromMoments(currentAnalysis.id, momentIds);
+      await refetchProjectClips();
+      queryClient.invalidateQueries({ queryKey: ["clips"] });
+      toast.success(`Created ${res.items.length} clip${res.items.length === 1 ? "" : "s"}!`);
+      setSelectedMomentIds(new Set());
+      return res.items;
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create clips");
+    } finally {
+      setIsCreatingClips(false);
+    }
+  };
+
+  const handleOpenInEditor = async (moment: Moment) => {
+    const existing = projectClips.find((c) => c.moment_id === moment.id);
+    if (existing) {
+      router.push(`/clips/${existing.id}`);
+      return;
+    }
+    const created = await handleCreateClips([moment.id]);
+    if (created && created.length > 0) {
+      router.push(`/clips/${created[0].id}`);
+    }
+  };
 
   // Start new analysis
   const handleStartAnalysis = async (params: {
@@ -211,23 +256,35 @@ export default function ProjectDetailPage() {
           </span>
         </div>
 
-        {/* Analysis Run Selector (Re-run history) */}
-        {analyses && analyses.length > 0 && (
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-text-secondary shrink-0" />
-            <select
-              value={selectedAnalysisId || ""}
-              onChange={(e) => setSelectedAnalysisId(e.target.value)}
-              className="h-9 px-3 text-xs bg-surface border border-border rounded-xl text-text-primary focus-ring"
-            >
-              {analyses.map((a, idx) => (
-                <option key={a.id} value={a.id}>
-                  Run #{analyses.length - idx} ({a.mode.toUpperCase()} &bull; {a.status})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setIsCustomClipModalOpen(true)}
+            className="gap-2 text-xs h-9 font-medium"
+          >
+            <Scissors className="w-3.5 h-3.5 text-primary" />
+            Create Custom Clip
+          </Button>
+
+          {/* Analysis Run Selector (Re-run history) */}
+          {analyses && analyses.length > 0 && (
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-text-secondary shrink-0" />
+              <select
+                value={selectedAnalysisId || ""}
+                onChange={(e) => setSelectedAnalysisId(e.target.value)}
+                className="h-9 px-3 text-xs bg-surface border border-border rounded-xl text-text-primary focus-ring"
+              >
+                {analyses.map((a, idx) => (
+                  <option key={a.id} value={a.id}>
+                    Run #{analyses.length - idx} ({a.mode.toUpperCase()} &bull; {a.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 2. Video Player Preview & Metadata Summary */}
@@ -348,22 +405,68 @@ export default function ProjectDetailPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {moments.map((moment) => (
-                <MomentCard
-                  key={moment.id}
-                  moment={moment}
-                  isSelected={selectedMomentIds.has(moment.id)}
-                  isActive={activeMomentId === moment.id}
-                  onSelectToggle={handleMomentSelectToggle}
-                  onPlayClick={() => handleMomentPlay(moment)}
-                  onTimeChange={handleMomentTimeChange}
-                  onRemove={handleMomentRemove}
-                />
-              ))}
+              {moments.map((moment) => {
+                const existing = projectClips.find((c) => c.moment_id === moment.id);
+                return (
+                  <MomentCard
+                    key={moment.id}
+                    moment={moment}
+                    isSelected={selectedMomentIds.has(moment.id)}
+                    isActive={activeMomentId === moment.id}
+                    existingClip={existing}
+                    isCreating={isCreatingClips}
+                    onSelectToggle={handleMomentSelectToggle}
+                    onPlayClick={() => handleMomentPlay(moment)}
+                    onTimeChange={handleMomentTimeChange}
+                    onRemove={handleMomentRemove}
+                    onCreateClip={(m) => handleCreateClips([m.id])}
+                    onOpenInEditor={handleOpenInEditor}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
       )}
+
+      {/* Sticky batch creation bar */}
+      {selectedMomentIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface/95 backdrop-blur-md border border-primary/40 shadow-2xl shadow-primary/20 px-6 py-3.5 rounded-2xl flex items-center gap-4 transition-all">
+          <span className="text-xs font-semibold text-text-primary">
+            {selectedMomentIds.size} moment{selectedMomentIds.size === 1 ? "" : "s"} selected
+          </span>
+          <div className="h-4 w-px bg-border" />
+          <Button
+            size="sm"
+            isLoading={isCreatingClips}
+            onClick={() => handleCreateClips(Array.from(selectedMomentIds))}
+            className="gap-2 text-xs font-bold"
+          >
+            <Scissors className="w-3.5 h-3.5" />
+            Create clips from selected ({selectedMomentIds.size})
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelectedMomentIds(new Set())}
+            className="text-xs text-text-secondary hover:text-text-primary"
+          >
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {/* Custom Clip Modal */}
+      <CreateCustomClipModal
+        isOpen={isCustomClipModalOpen}
+        onClose={() => setIsCustomClipModalOpen(false)}
+        projectId={projectId}
+        videoDuration={project?.duration_seconds}
+        onClipCreated={(clip) => {
+          refetchProjectClips();
+          router.push(`/clips/${clip.id}`);
+        }}
+      />
     </div>
   );
 }

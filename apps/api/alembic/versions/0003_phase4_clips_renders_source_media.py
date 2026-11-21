@@ -46,6 +46,12 @@ def upgrade() -> None:
             sa.UniqueConstraint('analysis_id', 'moment_id', name='uq_clips_analysis_moment'),
         )
     else:
+        # If legacy clips table exists, make old non-null columns nullable
+        if 'start_time' in existing_cols:
+            op.alter_column('clips', 'start_time', nullable=True)
+        if 'end_time' in existing_cols:
+            op.alter_column('clips', 'end_time', nullable=True)
+
         # Add new columns to clips
         if 'user_id' not in existing_cols:
             op.add_column('clips', sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=True))
@@ -115,9 +121,14 @@ def upgrade() -> None:
             sa.Column('height', sa.Integer(), nullable=True),
             sa.Column('error_message', sa.Text(), nullable=True),
             sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), onupdate=sa.func.now(), nullable=False),
             sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
         )
         op.create_index('ix_renders_clip_id', 'renders', ['clip_id'])
+    else:
+        render_cols = [c['name'] for c in inspector.get_columns('renders')]
+        if 'updated_at' not in render_cols:
+            op.add_column('renders', sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False))
 
     # 3. source_media table
     if not inspector.has_table('source_media'):

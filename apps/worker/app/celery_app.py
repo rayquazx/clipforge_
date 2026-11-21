@@ -34,6 +34,7 @@ celery_app.conf.update(
         "transcribe.*": {"queue": "transcribe"},
         "analyze.*":    {"queue": "default"},
         "render.*":     {"queue": "render"},
+        "batch.*":      {"queue": "render"},
     },
 
     # Misc ------------------------------------------------------------------

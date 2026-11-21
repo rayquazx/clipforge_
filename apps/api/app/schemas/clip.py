@@ -10,6 +10,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.ad import AdPlacement
+
 
 # ----------------------------------------------------------------------------
 # Format & Crop
@@ -202,6 +204,7 @@ class EditState(BaseModel):
     subtitles: Optional[SubtitlesConfig] = None
     overlays: List[OverlayItem] = Field(default_factory=list)
     music: Optional[MusicConfig] = None
+    ads: List[AdPlacement] = Field(default_factory=list)
 
 
 class EditVersionResponse(BaseModel):

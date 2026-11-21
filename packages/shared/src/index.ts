@@ -152,6 +152,61 @@ export const AudioAssetSchema = z.object({
 export type AudioAsset = z.infer<typeof AudioAssetSchema>;
 
 // ----------------------------------------------------------------------------
+// Phase 6 Ads & Placement Schemas
+// ----------------------------------------------------------------------------
+export const AdTextConfigSchema = z.object({
+  text: z.string(),
+  font: z.string().default("Roboto"),
+  size: z.number().positive().default(32),
+  color: z.string().default("#FFFFFF"),
+  stroke: z.string().optional(),
+  bg: z.string().optional(),
+  bg_opacity: z.number().min(0).max(1).optional(),
+});
+export type AdTextConfig = z.infer<typeof AdTextConfigSchema>;
+
+export const AdTimingSchema = z.object({
+  anchor: z.enum(["clip_start", "clip_end"]).default("clip_start"),
+  offset_sec: z.number().default(0),
+  duration_sec: z.number().positive().optional(),
+});
+export type AdTiming = z.infer<typeof AdTimingSchema>;
+
+export const AdLayoutSchema = z.object({
+  position: z.enum([
+    "top_left",
+    "top_right",
+    "bottom_left",
+    "bottom_right",
+    "center",
+    "custom",
+  ]).default("bottom_right"),
+  x: z.number().min(0).max(1).optional(),
+  y: z.number().min(0).max(1).optional(),
+  scale: z.number().min(0.01).max(1.0).default(0.3),
+  opacity: z.number().min(0).max(1).default(1.0),
+  margin: z.number().min(0).max(0.5).default(0.05),
+});
+export type AdLayout = z.infer<typeof AdLayoutSchema>;
+
+export const AdAudioSchema = z.object({
+  volume: z.number().min(0).max(1).default(1.0),
+});
+export type AdAudio = z.infer<typeof AdAudioSchema>;
+
+export const AdPlacementSchema = z.object({
+  id: z.string().uuid(),
+  ad_asset_id: z.string().uuid(),
+  type: z.enum(["preroll", "postroll", "overlay", "lower_third"]),
+  timing: AdTimingSchema.default({}),
+  layout: AdLayoutSchema.default({ position: "bottom_right" }),
+  animation: z.enum(["none", "fade", "slide"]).default("none"),
+  text_override: z.string().nullable().optional(),
+  audio: AdAudioSchema.default({}),
+});
+export type AdPlacement = z.infer<typeof AdPlacementSchema>;
+
+// ----------------------------------------------------------------------------
 // Versioned Edit State
 // ----------------------------------------------------------------------------
 export const EditStateSchema = z
@@ -162,6 +217,7 @@ export const EditStateSchema = z
     subtitles: SubtitlesConfigSchema.optional(),
     overlays: z.array(OverlayItemSchema).default([]),
     music: MusicConfigSchema.optional(),
+    ads: z.array(AdPlacementSchema).default([]),
   })
   .passthrough(); // Preserve unknown keys for forward compatibility
 export type EditState = z.infer<typeof EditStateSchema>;
@@ -294,3 +350,81 @@ export const BulkActionResponseSchema = z.object({
   ),
 });
 export type BulkActionResponse = z.infer<typeof BulkActionResponseSchema>;
+
+// ----------------------------------------------------------------------------
+// Phase 6 Ad Assets, Templates, Batches & Timeline Schemas
+// ----------------------------------------------------------------------------
+export const AdAssetSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  name: z.string(),
+  kind: z.enum(["video", "image", "text"]),
+  url: z.string().nullable(),
+  thumbnail_url: z.string().nullable(),
+  duration_sec: z.number().nullable(),
+  width: z.number().nullable(),
+  height: z.number().nullable(),
+  has_audio: z.boolean().default(false),
+  file_size: z.number().nullable(),
+  text_config: AdTextConfigSchema.nullable(),
+  tags: z.array(z.string()).default([]),
+  status: z.enum(["processing", "ready", "failed"]),
+  usage_count: z.number().default(0),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type AdAsset = z.infer<typeof AdAssetSchema>;
+
+export const AdTemplateSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  name: z.string(),
+  placements: z.array(AdPlacementSchema.omit({ id: true })),
+  usage_count: z.number().default(0),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type AdTemplate = z.infer<typeof AdTemplateSchema>;
+
+export const TimelineInfoSchema = z.object({
+  main_duration_sec: z.number(),
+  preroll_duration_sec: z.number(),
+  postroll_duration_sec: z.number(),
+  total_duration_sec: z.number(),
+});
+export type TimelineInfo = z.infer<typeof TimelineInfoSchema>;
+
+export const BatchItemSchema = z.object({
+  id: z.string().uuid(),
+  batch_id: z.string().uuid(),
+  clip_id: z.string().uuid(),
+  render_id: z.string().uuid().nullable(),
+  status: z.enum(["queued", "rendering", "completed", "failed"]),
+  error_message: z.string().nullable(),
+});
+export type BatchItem = z.infer<typeof BatchItemSchema>;
+
+export const BatchSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  status: z.enum([
+    "queued",
+    "running",
+    "completed",
+    "completed_with_errors",
+    "failed",
+    "cancelled",
+  ]),
+  total: z.number(),
+  completed: z.number(),
+  failed: z.number(),
+  ad_template_id: z.string().uuid().nullable(),
+  options: RenderOptionsSchema,
+  ads_mode: z.enum(["replace", "append", "keep"]).default("keep"),
+  items: z.array(BatchItemSchema).default([]),
+  zip_ready: z.boolean().default(false),
+  created_at: z.string(),
+  finished_at: z.string().nullable(),
+});
+export type Batch = z.infer<typeof BatchSchema>;
+

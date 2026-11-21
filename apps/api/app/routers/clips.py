@@ -29,6 +29,7 @@ from app.models.analysis import Analysis, Moment
 from app.models.clip import Clip
 from app.models.project import Project
 from app.models.render import Render
+from app.models.batch import Batch, BatchItem
 from app.models.user import User
 from app.schemas.clip import (
     BulkActionRequest,
@@ -46,6 +47,8 @@ from app.schemas.clip import (
     WaveformResponse,
 )
 from app.schemas.render import CreateRenderRequest, RenderListResponse, RenderResponse
+from app.schemas.ad import TimelineInfoResponse
+from app.services.timeline_calculator import calculate_clip_timeline
 from app.services.storage_service import StorageService
 from app.utils.errors import (
     NotFoundError,
@@ -332,21 +335,48 @@ async def bulk_clip_action(
             accepted.append(clip_id)
 
         elif payload.action == "export":
-            # Create a default render job
+            accepted.append(clip_id)
+
+    if payload.action == "export" and accepted:
+        # Create a Batch internally per Phase 6 requirements
+        batch_id = uuid.uuid4()
+        batch_options = {"resolution": "original", "fps": "original", "quality": "high"}
+        batch = Batch(
+            id=batch_id,
+            user_id=current_user.id,
+            status="queued",
+            options=batch_options,
+            ads_mode="keep",
+            created_at=datetime.utcnow(),
+        )
+        db.add(batch)
+
+        for clip_id in accepted:
+            clip = owned_clips[clip_id]
+            render_id = uuid.uuid4()
             render = Render(
-                id=uuid.uuid4(),
+                id=render_id,
                 clip_id=clip.id,
                 status="queued",
                 progress=0,
-                options={"resolution": "original", "fps": "original", "quality": "high"},
+                options=batch_options,
             )
             clip.status = "rendering"
             db.add(render)
-            accepted.append(clip_id)
-            try:
-                celery_client.send_task("render.clip_render", args=[str(render.id)])
-            except Exception:
-                pass
+
+            batch_item = BatchItem(
+                id=uuid.uuid4(),
+                batch_id=batch_id,
+                clip_id=clip.id,
+                render_id=render_id,
+                status="queued",
+            )
+            db.add(batch_item)
+
+        try:
+            celery_client.send_task("batch.process_batch", args=[str(batch_id)])
+        except Exception:
+            pass
 
     await db.commit()
     return {"accepted": accepted, "skipped": skipped}
@@ -817,3 +847,68 @@ async def list_clip_renders(
         "limit": limit,
         "total": total,
     }
+
+
+# ============================================================================
+# 11. Phase 6 Timeline Info & Quick Ads Preview
+# ============================================================================
+@router.get("/clips/{clip_id}/timeline-info", response_model=TimelineInfoResponse)
+async def get_clip_timeline_info(
+    clip_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TimelineInfoResponse:
+    """Return single source of truth timeline coordinate info for UI math."""
+    res = await db.execute(
+        select(Clip).where(Clip.id == clip_id, Clip.user_id == current_user.id)
+    )
+    clip = res.scalars().first()
+    if not clip:
+        raise NotFoundError("Clip not found or access denied.")
+
+    info = calculate_clip_timeline(clip.edit_state or {})
+    return TimelineInfoResponse.model_validate(info)
+
+
+@router.post(
+    "/clips/{clip_id}/renders/preview",
+    response_model=RenderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_clip_preview_render(
+    clip_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """Queue a quick 360p preview render WITH all ads included."""
+    res = await db.execute(
+        select(Clip).where(Clip.id == clip_id, Clip.user_id == current_user.id)
+    )
+    clip = res.scalars().first()
+    if not clip:
+        raise NotFoundError("Clip not found or access denied.")
+
+    render = Render(
+        id=uuid.uuid4(),
+        clip_id=clip.id,
+        status="queued",
+        progress=0,
+        options={
+            "resolution": "360p",
+            "fps": "original",
+            "quality": "small",
+            "is_preview": True,
+        },
+    )
+    clip.status = "rendering"
+    db.add(render)
+    await db.commit()
+    await db.refresh(render)
+
+    try:
+        celery_client.send_task("render.clip_render", args=[str(render.id)])
+    except Exception:
+        pass
+
+    return RenderResponse.model_validate(render)
+

@@ -21,6 +21,9 @@ from app.routers.config import router as config_router
 from app.routers.events import router as events_router
 from app.routers.projects import router as projects_router
 from app.routers.renders import router as renders_router
+from app.routers.ad_assets import router as ad_assets_router
+from app.routers.ad_templates import router as ad_templates_router
+from app.routers.batches import router as batches_router
 from app.services.storage_service import StorageService
 from app.utils.errors import (
     AppError,
@@ -73,6 +76,9 @@ app.include_router(clips_router)
 app.include_router(renders_router)
 app.include_router(events_router)
 app.include_router(config_router)
+app.include_router(ad_assets_router)
+app.include_router(ad_templates_router)
+app.include_router(batches_router)
 
 
 # ---------------------------------------------------------------------------

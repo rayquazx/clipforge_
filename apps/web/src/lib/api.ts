@@ -37,7 +37,7 @@ export function handleApiError(error: unknown): never {
   if (axios.isAxiosError(error)) {
     const status = error.response?.status || 500;
     const data = error.response?.data;
-    
+
     // Contract format: { error: { code: string, message: string, details?: object } }
     if (data?.error) {
       throw new ApiError(

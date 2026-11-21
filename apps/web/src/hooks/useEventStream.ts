@@ -13,6 +13,22 @@ import type {
   RenderCancelledEvent,
 } from "@/types";
 
+export interface BatchProgressEvent {
+  batch_id: string;
+  completed: number;
+  failed: number;
+  total: number;
+}
+
+export interface BatchCompletedEvent {
+  batch_id: string;
+  status: string;
+}
+
+export interface AdAssetReadyEvent {
+  ad_asset_id: string;
+}
+
 export interface EventStreamCallbacks {
   onPreviewProgress?: (data: PreviewProgressEvent) => void;
   onPreviewReady?: (data: PreviewReadyEvent) => void;
@@ -21,6 +37,9 @@ export interface EventStreamCallbacks {
   onRenderReady?: (data: RenderReadyEvent) => void;
   onRenderFailed?: (data: RenderFailedEvent) => void;
   onRenderCancelled?: (data: RenderCancelledEvent) => void;
+  onBatchProgress?: (data: BatchProgressEvent) => void;
+  onBatchCompleted?: (data: BatchCompletedEvent) => void;
+  onAdAssetReady?: (data: AdAssetReadyEvent) => void;
 }
 
 export function useEventStream(
@@ -52,6 +71,8 @@ export function useEventStream(
           queryClient.invalidateQueries({ queryKey: ["clip", clipId] });
         }
         queryClient.invalidateQueries({ queryKey: ["clips"] });
+        queryClient.invalidateQueries({ queryKey: ["batches"] });
+        queryClient.invalidateQueries({ queryKey: ["ad-assets"] });
       }, 3000);
     };
 
@@ -176,15 +197,62 @@ export function useEventStream(
             }
           } catch {}
         });
+
+        // Phase 6 SSE Events
+        es.addEventListener("ad_asset.ready", (e) => {
+          try {
+            const data: AdAssetReadyEvent = JSON.parse(e.data);
+            queryClient.invalidateQueries({ queryKey: ["ad-assets"] });
+            callbacksRef.current?.onAdAssetReady?.(data);
+          } catch {}
+        });
+
+        es.addEventListener("batch.progress", (e) => {
+          try {
+            const data: BatchProgressEvent = JSON.parse(e.data);
+            queryClient.invalidateQueries({ queryKey: ["batches"] });
+            queryClient.invalidateQueries({ queryKey: ["batch", data.batch_id] });
+            callbacksRef.current?.onBatchProgress?.(data);
+          } catch {}
+        });
+
+        es.addEventListener("batch.completed", (e) => {
+          try {
+            const data: BatchCompletedEvent = JSON.parse(e.data);
+            queryClient.invalidateQueries({ queryKey: ["batches"] });
+            queryClient.invalidateQueries({ queryKey: ["batch", data.batch_id] });
+            callbacksRef.current?.onBatchCompleted?.(data);
+          } catch {}
+        });
       } catch (err) {
         startPollingFallback();
       }
     };
 
+    // Custom window listener for MSW mock events
+    const handleMockEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ event: string; data: any }>;
+      const { event, data } = customEvent.detail || {};
+      if (event === "ad_asset.ready") {
+        queryClient.invalidateQueries({ queryKey: ["ad-assets"] });
+        callbacksRef.current?.onAdAssetReady?.(data);
+      } else if (event === "batch.progress") {
+        queryClient.invalidateQueries({ queryKey: ["batches"] });
+        queryClient.invalidateQueries({ queryKey: ["batch", data?.batch_id] });
+        callbacksRef.current?.onBatchProgress?.(data);
+      } else if (event === "batch.completed") {
+        queryClient.invalidateQueries({ queryKey: ["batches"] });
+        queryClient.invalidateQueries({ queryKey: ["batch", data?.batch_id] });
+        callbacksRef.current?.onBatchCompleted?.(data);
+      }
+    };
+
+    window.addEventListener("clipforge:sse", handleMockEvent);
     connectSSE();
 
     return () => {
       isUnmounted = true;
+      window.removeEventListener("clipforge:sse", handleMockEvent);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       stopPollingFallback();
       if (eventSourceRef.current) {

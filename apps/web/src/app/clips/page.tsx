@@ -33,6 +33,8 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EditorExportDialog } from "@/components/editor/EditorExportDialog";
 import { BulkResultModal } from "@/components/clips/BulkResultModal";
+import { BatchExportDialog } from "@/components/batches/BatchExportDialog";
+import { Layers } from "lucide-react";
 import type { Clip, BulkActionResponse } from "@/types";
 
 export default function ClipLibraryPage() {
@@ -55,6 +57,7 @@ export default function ClipLibraryPage() {
   const [bulkResult, setBulkResult] = React.useState<BulkActionResponse | null>(null);
   const [bulkActionType, setBulkActionType] = React.useState<"export" | "delete">("export");
   const [exportClipId, setExportClipId] = React.useState<string | null>(null);
+  const [isBatchExportOpen, setIsBatchExportOpen] = React.useState(false);
 
   // Debounce search input
   React.useEffect(() => {
@@ -289,13 +292,22 @@ export default function ClipLibraryPage() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
+              onClick={() => setIsBatchExportOpen(true)}
+              className="h-8 text-xs gap-1.5 font-bold shadow-md shadow-primary/20"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Batch Export ({selectedClipIds.size})</span>
+            </Button>
+
+            <Button
+              size="sm"
               variant="outline"
               isLoading={isBulkSubmitting}
               onClick={() => handleBulkAction("export")}
               className="h-8 text-xs gap-1.5"
             >
               <Film className="w-3.5 h-3.5 text-primary" />
-              <span>Export Selected</span>
+              <span>Direct Export</span>
             </Button>
 
             <Button
@@ -306,7 +318,7 @@ export default function ClipLibraryPage() {
               className="h-8 text-xs gap-1.5 text-error hover:bg-error/10 hover:border-error/40"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected</span>
+              <span>Delete</span>
             </Button>
           </div>
         </div>
@@ -627,6 +639,17 @@ export default function ClipLibraryPage() {
           }}
         />
       )}
+
+      {/* Batch Export Dialog */}
+      <BatchExportDialog
+        isOpen={isBatchExportOpen}
+        onClose={() => setIsBatchExportOpen(false)}
+        selectedClipIds={Array.from(selectedClipIds)}
+        clipTitles={clips.reduce<Record<string, string>>((acc, c) => {
+          acc[c.id] = c.title;
+          return acc;
+        }, {})}
+      />
     </div>
   );
 }

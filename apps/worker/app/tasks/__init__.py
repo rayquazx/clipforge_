@@ -10,4 +10,5 @@ from app.tasks.chat_fetch import *   # noqa: F401, F403
 from app.tasks.download import *     # noqa: F401, F403
 from app.tasks.metadata import *     # noqa: F401, F403
 from app.tasks.render import *       # noqa: F401, F403
+from app.tasks.batch import *        # noqa: F401, F403
 from app.tasks.transcribe import *   # noqa: F401, F403

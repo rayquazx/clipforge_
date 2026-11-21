@@ -28,7 +28,9 @@ from app.database import AsyncSessionLocal
 from app.models.clip import Clip
 from app.models.render import Render
 from app.models.source_media import SourceMedia
+from app.models.ad_asset import AdAsset
 from app.render.graph_builder import GraphBuilder, sanitize_filename
+from app.render.timeline import calculate_clip_timeline
 from app.utils.storage import download_file, get_minio_client, upload_file
 
 logger = logging.getLogger(__name__)
@@ -179,16 +181,47 @@ class RenderRunner:
             )
 
             output_mp4 = os.path.join(self.temp_dir, "output.mp4")
+
+            # Resolve effective edit_state (supports non-destructive batch templates)
+            effective_edit_state = (render.options or {}).get("effective_edit_state") or clip.edit_state or {}
+
+            # Download any ad assets referenced in edit_state
+            resolved_ad_assets: Dict[str, str] = {}
+            ads = effective_edit_state.get("ads", [])
+            if isinstance(ads, list):
+                for p in ads:
+                    aid_str = str(p.get("ad_asset_id"))
+                    if aid_str and aid_str not in resolved_ad_assets:
+                        try:
+                            aid_uuid = uuid.UUID(aid_str)
+                            res_asset = await session.execute(
+                                select(AdAsset).where(AdAsset.id == aid_uuid)
+                            )
+                            ad_asset = res_asset.scalars().first()
+                            if ad_asset and ad_asset.storage_key:
+                                ext = os.path.splitext(ad_asset.storage_key)[1] or (".mp4" if ad_asset.kind == "video" else ".png")
+                                local_ad_path = os.path.join(self.temp_dir, f"ad_{aid_str}{ext}")
+                                download_file(
+                                    minio_client,
+                                    settings.minio_bucket,
+                                    ad_asset.storage_key,
+                                    local_ad_path,
+                                )
+                                resolved_ad_assets[aid_str] = local_ad_path
+                        except Exception as exc:
+                            logger.warning("Could not download ad asset %s: %s", aid_str, exc)
+
             args = GraphBuilder.build_ffmpeg_args(
                 source_path=source_local_path,
                 output_path=output_mp4,
-                edit_state=clip.edit_state,
+                edit_state=effective_edit_state,
                 options=render.options,
+                resolved_ad_assets=resolved_ad_assets,
             )
 
             # Calculate expected duration for progress estimation
-            trim = clip.edit_state.get("trim", {})
-            target_duration = max(0.1, float(trim.get("end", 1.0)) - float(trim.get("start", 0.0)))
+            timeline_info = calculate_clip_timeline(effective_edit_state)
+            target_duration = timeline_info["total_duration_sec"]
 
             # Execute FFmpeg process
             success = await self._run_ffmpeg_process(

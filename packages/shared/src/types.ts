@@ -148,6 +148,7 @@ export interface EditState {
   subtitles?: SubtitlesConfig;
   overlays?: OverlayItem[];
   music?: MusicConfig;
+  ads?: AdPlacement[];
   [key: string]: unknown;
 }
 
@@ -279,3 +280,134 @@ export interface BulkActionResponse {
   accepted: string[];
   skipped: Array<{ id: string; reason: string }>;
 }
+
+// ============================================================================
+// Phase 6 Ads & Batch Export Types
+// ============================================================================
+
+export type AdAssetKind = "video" | "image" | "text";
+export type AdAssetStatus = "processing" | "ready" | "failed";
+
+export interface AdTextConfig {
+  text: string;
+  font: string;
+  size: number;
+  color: string;
+  stroke?: string;
+  bg?: string;
+  bg_opacity?: number;
+}
+
+export interface AdAsset {
+  id: string;
+  user_id: string;
+  name: string;
+  kind: AdAssetKind;
+  url: string | null;
+  thumbnail_url: string | null;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  has_audio: boolean;
+  file_size: number | null;
+  text_config: AdTextConfig | null;
+  tags: string[];
+  status: AdAssetStatus;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AdPlacementType = "preroll" | "postroll" | "overlay" | "lower_third";
+export type AdTimingAnchor = "clip_start" | "clip_end";
+export type AdLayoutPosition =
+  | "top_left"
+  | "top_right"
+  | "bottom_left"
+  | "bottom_right"
+  | "center"
+  | "custom";
+export type AdAnimation = "none" | "fade" | "slide";
+
+export interface AdTiming {
+  anchor?: AdTimingAnchor;
+  offset_sec?: number;
+  duration_sec?: number;
+}
+
+export interface AdLayout {
+  position: AdLayoutPosition;
+  x?: number; // 0-1
+  y?: number; // 0-1
+  scale?: number; // 0-1, default 0.3
+  opacity?: number; // 0-1, default 1.0
+  margin?: number; // 0-1, default 0.05
+}
+
+export interface AdAudio {
+  volume?: number; // 0-1, default 1.0
+}
+
+export interface AdPlacement {
+  id: string;
+  ad_asset_id: string;
+  type: AdPlacementType;
+  timing: AdTiming;
+  layout: AdLayout;
+  animation?: AdAnimation;
+  text_override?: string | null;
+  audio?: AdAudio;
+}
+
+export interface AdTemplate {
+  id: string;
+  user_id: string;
+  name: string;
+  placements: Omit<AdPlacement, "id">[];
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimelineInfo {
+  main_duration_sec: number;
+  preroll_duration_sec: number;
+  postroll_duration_sec: number;
+  total_duration_sec: number;
+}
+
+export type BatchStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "completed_with_errors"
+  | "failed"
+  | "cancelled";
+
+export type BatchItemStatus = "queued" | "rendering" | "completed" | "failed";
+
+export interface BatchItem {
+  id: string;
+  batch_id: string;
+  clip_id: string;
+  render_id: string | null;
+  status: BatchItemStatus;
+  error_message: string | null;
+}
+
+export interface Batch {
+  id: string;
+  user_id: string;
+  status: BatchStatus;
+  total: number;
+  completed: number;
+  failed: number;
+  ad_template_id: string | null;
+  options: RenderOptions;
+  ads_mode: "replace" | "append" | "keep";
+  items: BatchItem[];
+  zip_ready: boolean;
+  created_at: string;
+  finished_at: string | null;
+}
+

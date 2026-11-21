@@ -53,6 +53,11 @@ class WorkerSettings(BaseSettings):
 settings = WorkerSettings()
 
 
+def get_settings() -> WorkerSettings:
+    """Return the global worker settings singleton."""
+    return settings
+
+
 # ---------------------------------------------------------------------------
 # Scoring configuration (loaded from YAML)
 # ---------------------------------------------------------------------------

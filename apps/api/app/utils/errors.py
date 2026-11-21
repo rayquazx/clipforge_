@@ -82,6 +82,27 @@ class RateLimitedError(AppError):
         super().__init__(code="rate_limited", message=message, status_code=status.HTTP_429_TOO_MANY_REQUESTS, details=details)
 
 
+class InUseError(AppError):
+    def __init__(self, message: str = "Resource is currently in use", details: Optional[dict[str, Any]] = None):
+        super().__init__(code="in_use", message=message, status_code=status.HTTP_409_CONFLICT, details=details)
+
+
+class UnsupportedMediaError(AppError):
+    def __init__(self, message: str = "Unsupported media type", details: Optional[dict[str, Any]] = None):
+        super().__init__(code="unsupported_media", message=message, status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, details=details)
+
+
+class MediaTooLargeError(AppError):
+    def __init__(self, message: str = "Media file too large", details: Optional[dict[str, Any]] = None):
+        super().__init__(code="media_too_large", message=message, status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, details=details)
+
+
+class InvalidPlacementError(AppError):
+    def __init__(self, message: str = "Invalid ad placement configuration", details: Optional[dict[str, Any]] = None):
+        super().__init__(code="invalid_placement", message=message, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, details=details)
+
+
+
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     """Handle custom AppError exceptions."""
     return JSONResponse(status_code=exc.status_code, content=jsonable_encoder(exc.to_dict()))

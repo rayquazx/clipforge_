@@ -8,6 +8,7 @@ route handlers stay focused on business logic.
 from typing import Optional
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -46,7 +47,7 @@ async def get_current_user(
 
     try:
         token_data = decode_token(token)
-    except ValueError:
+    except (ValueError, JWTError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token.",

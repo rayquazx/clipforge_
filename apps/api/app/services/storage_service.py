@@ -6,7 +6,7 @@ generation against the configured bucket.
 """
 
 from io import BytesIO
-from typing import Union
+from typing import Any, Union
 
 from minio import Minio
 
@@ -71,6 +71,14 @@ class StorageService:
         finally:
             response.close()
             response.release_conn()
+
+    def stat_file(self, key: str) -> Any:
+        """Return object stat information (size, content_type, etag, etc.)."""
+        return self._client.stat_object(self._bucket, key)
+
+    def get_file_stream(self, key: str, offset: int = 0, length: int = 0):
+        """Return an open object stream for the given range."""
+        return self._client.get_object(self._bucket, key, offset=offset, length=length)
 
     def get_presigned_url(self, key: str, expires: int = 3600) -> str:
         """

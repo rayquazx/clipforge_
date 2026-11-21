@@ -16,6 +16,9 @@ from app.models.export import Export, ExportStatus, MusicTrack, TextOverlay  # n
 from app.models.subtitle_style import SubtitleStyle  # noqa: F401
 from app.models.audio_asset import AudioAsset  # noqa: F401
 from app.models.edit_version import EditVersion  # noqa: F401
+from app.models.ad_asset import AdAsset  # noqa: F401
+from app.models.ad_template import AdTemplate  # noqa: F401
+from app.models.batch import Batch, BatchItem  # noqa: F401
 
 __all__ = [
     "Base",
@@ -47,4 +50,8 @@ __all__ = [
     "SubtitleStyle",
     "AudioAsset",
     "EditVersion",
+    "AdAsset",
+    "AdTemplate",
+    "Batch",
+    "BatchItem",
 ]

@@ -12,6 +12,8 @@ import {
   Loader2,
   AlertTriangle,
   Repeat,
+  Tv,
+  Sparkles,
 } from "lucide-react";
 import { useEditorStore } from "@/stores/editor-store";
 import { apiClient } from "@/lib/api";
@@ -21,7 +23,9 @@ import {
   formatTimestamp,
   clamp,
 } from "@/lib/time-mapping";
+import { layoutToCSS } from "@/lib/ad-math";
 import { Button } from "@/components/ui/Button";
+import { EditorPreviewWithAdsModal } from "./EditorPreviewWithAdsModal";
 
 export function EditorPlayer() {
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -41,8 +45,15 @@ export function EditorPlayer() {
   const volume = useEditorStore((s) => s.volume);
   const setVolume = useEditorStore((s) => s.setVolume);
 
+  // Phase 6 Ads State
+  const playWithAds = useEditorStore((s) => s.playWithAds);
+  const setPlayWithAds = useEditorStore((s) => s.setPlayWithAds);
+  const selectedAdId = useEditorStore((s) => s.selectedAdId);
+  const setSelectedAdId = useEditorStore((s) => s.setSelectedAdId);
+
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isRetryingPreview, setIsRetryingPreview] = React.useState(false);
+  const [isPreviewWithAdsOpen, setIsPreviewWithAdsOpen] = React.useState(false);
 
   const offsetSec = previewStatus?.offset_sec ?? Math.max(0, (clip?.source_start_sec ?? 0) - 5);
   const trimStart = clip?.edit_state?.trim?.start ?? clip?.source_start_sec ?? 0;
@@ -213,6 +224,65 @@ export function EditorPlayer() {
         </div>
       )}
 
+      {/* Live Overlay and Lower-Third Ads (in MAIN clip time) */}
+      {clip?.edit_state?.ads?.map((ad) => {
+        if (ad.type !== "overlay" && ad.type !== "lower_third") return null;
+
+        const mainTime = currentTime - trimStart;
+        const start = ad.timing.offset_sec;
+        const duration = ad.timing.duration_sec || 5;
+        const end = start + duration;
+        const isVisible = mainTime >= start && mainTime <= end;
+
+        if (!isVisible) return null;
+
+        const isSelected = selectedAdId === ad.id;
+        const css = layoutToCSS(ad.layout);
+        const animationClass =
+          ad.animation === "fade"
+            ? "animate-in fade-in duration-300"
+            : ad.animation === "slide"
+            ? "animate-in slide-in-from-bottom-3 duration-300"
+            : "";
+
+        return (
+          <div
+            key={ad.id}
+            style={css}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedAdId(ad.id);
+            }}
+            className={`pointer-events-auto cursor-pointer transition-all ${animationClass} ${
+              isSelected ? "ring-2 ring-primary ring-offset-2 ring-offset-black rounded-lg" : ""
+            }`}
+          >
+            {ad.type === "lower_third" ? (
+              <div className="bg-black/85 backdrop-blur-md text-white px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2.5">
+                <div className="w-2 h-6 rounded-full bg-primary shrink-0" />
+                <div className="truncate">
+                  <div className="text-xs font-bold tracking-wide truncate">
+                    {ad.text_override || "Sponsor Title"}
+                  </div>
+                  <div className="text-[10px] text-white/70">Sponsored Content</div>
+                </div>
+              </div>
+            ) : ad.text_override ? (
+              <div className="px-3 py-1.5 rounded-lg bg-black/85 text-white text-xs font-bold shadow-lg border border-white/20">
+                {ad.text_override}
+              </div>
+            ) : (
+              <div className="bg-surface/90 backdrop-blur-sm p-2 rounded-xl border border-white/20 shadow-2xl flex items-center gap-2 text-white">
+                <div className="w-5 h-5 rounded-md bg-primary/20 flex items-center justify-center text-primary text-[10px] font-bold">
+                  AD
+                </div>
+                <span className="text-xs font-semibold">Ad Overlay</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
       {/* Bottom Controls Bar */}
       <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent flex items-center justify-between gap-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200">
         {/* Left: Play/Pause, Loop, Time */}
@@ -249,8 +319,34 @@ export function EditorPlayer() {
           </div>
         </div>
 
-        {/* Right: Volume, Speed, Fullscreen */}
-        <div className="flex items-center gap-3">
+        {/* Right: Ads toggle, 360p Preview, Volume, Speed, Fullscreen */}
+        <div className="flex items-center gap-2.5">
+          {/* Play with Ads Toggle */}
+          <button
+            type="button"
+            onClick={() => setPlayWithAds(!playWithAds)}
+            className={`px-2 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+              playWithAds
+                ? "bg-amber-400/20 text-amber-300 border-amber-400/50"
+                : "text-white/70 border-white/20 hover:bg-white/10"
+            }`}
+            title="Simulate playback with ads mode"
+          >
+            <Tv className="w-3.5 h-3.5" />
+            <span>Ads: {playWithAds ? "ON" : "OFF"}</span>
+          </button>
+
+          {/* Quick 360p Preview with Ads */}
+          <button
+            type="button"
+            onClick={() => setIsPreviewWithAdsOpen(true)}
+            className="px-2 py-1 rounded-lg text-xs font-semibold text-white/80 border border-white/20 hover:bg-white/10 transition-colors flex items-center gap-1.5"
+            title="Quick 360p Preview with ads baked in"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span>360p Preview</span>
+          </button>
+
           {/* Volume */}
           <div className="flex items-center gap-2 group/vol">
             <button
@@ -300,6 +396,15 @@ export function EditorPlayer() {
           </button>
         </div>
       </div>
+
+      {/* 360p Preview with Ads Modal */}
+      {clip && (
+        <EditorPreviewWithAdsModal
+          isOpen={isPreviewWithAdsOpen}
+          onClose={() => setIsPreviewWithAdsOpen(false)}
+          clipId={clip.id}
+        />
+      )}
     </div>
   );
 }

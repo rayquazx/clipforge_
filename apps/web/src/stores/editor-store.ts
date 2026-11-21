@@ -1,5 +1,14 @@
 import { create } from "zustand";
-import type { Clip, EditState, PreviewStatus, Waveform, Thumbnails, Render } from "@/types";
+import type {
+  Clip,
+  EditState,
+  PreviewStatus,
+  Waveform,
+  Thumbnails,
+  Render,
+  AdPlacement,
+  TimelineInfo,
+} from "@/types";
 import { clamp } from "@/lib/time-mapping";
 
 const MAX_HISTORY = 50;
@@ -23,11 +32,22 @@ interface EditorStoreState {
   sentenceBoundaries: number[]; // Source timestamps
   conflictClip: Clip | null;
   latestRender: Render | null;
+  timelineInfo: TimelineInfo | null;
+  playWithAds: boolean;
+  selectedAdId: string | null;
 
   // Actions
   initClip: (clip: Clip) => void;
   updateTitle: (title: string) => void;
   updateTrim: (start: number, end: number, pushHistory?: boolean) => void;
+  updateAds: (ads: AdPlacement[], pushHistory?: boolean) => void;
+  addAdPlacement: (placement: AdPlacement) => void;
+  updateAdPlacement: (id: string, updates: Partial<AdPlacement>) => void;
+  removeAdPlacement: (id: string) => void;
+  reorderAdPlacements: (ads: AdPlacement[]) => void;
+  setTimelineInfo: (info: TimelineInfo | null) => void;
+  setPlayWithAds: (play: boolean) => void;
+  setSelectedAdId: (id: string | null) => void;
   undo: () => void;
   redo: () => void;
   canUndo: () => boolean;
@@ -69,6 +89,9 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
   sentenceBoundaries: [],
   conflictClip: null,
   latestRender: null,
+  timelineInfo: null,
+  playWithAds: false,
+  selectedAdId: null,
 
   initClip: (clip) => {
     if (!clip) return;
@@ -140,6 +163,69 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
       saveStatus: "unsaved",
     });
   },
+
+  updateAds: (ads, pushHistory = true) => {
+    const { clip, history, historyIndex } = get();
+    if (!clip) return;
+
+    const newEditState: EditState = {
+      ...clip.edit_state,
+      schema_version: 1,
+      ads: [...ads],
+    };
+
+    let newHistory = history;
+    let newIndex = historyIndex;
+
+    if (pushHistory) {
+      newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(newEditState);
+      if (newHistory.length > MAX_HISTORY) {
+        newHistory.shift();
+      }
+      newIndex = newHistory.length - 1;
+    }
+
+    set({
+      clip: { ...clip, edit_state: newEditState },
+      history: newHistory,
+      historyIndex: newIndex,
+      saveStatus: "unsaved",
+    });
+  },
+
+  addAdPlacement: (placement) => {
+    const { clip } = get();
+    if (!clip) return;
+    const currentAds = clip.edit_state?.ads || [];
+    get().updateAds([...currentAds, placement]);
+  },
+
+  updateAdPlacement: (id, updates) => {
+    const { clip } = get();
+    if (!clip) return;
+    const currentAds = clip.edit_state?.ads || [];
+    const updated = currentAds.map((p) => (p.id === id ? { ...p, ...updates } : p));
+    get().updateAds(updated);
+  },
+
+  removeAdPlacement: (id) => {
+    const { clip, selectedAdId } = get();
+    if (!clip) return;
+    const currentAds = clip.edit_state?.ads || [];
+    get().updateAds(currentAds.filter((p) => p.id !== id));
+    if (selectedAdId === id) {
+      set({ selectedAdId: null });
+    }
+  },
+
+  reorderAdPlacements: (ads) => {
+    get().updateAds(ads);
+  },
+
+  setTimelineInfo: (info) => set({ timelineInfo: info }),
+  setPlayWithAds: (play) => set({ playWithAds: play }),
+  setSelectedAdId: (id) => set({ selectedAdId: id }),
 
   undo: () => {
     const { clip, history, historyIndex } = get();

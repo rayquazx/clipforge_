@@ -9,7 +9,7 @@ FROM python:3.11-slim
 
 # Install system-level dependencies (ffmpeg for video processing, compilers & libraries for audio/db).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg gcc g++ libpq-dev libsndfile1 && \
+    apt-get install -y --no-install-recommends ffmpeg gcc g++ libpq-dev libsndfile1 pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

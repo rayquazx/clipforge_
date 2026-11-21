@@ -41,7 +41,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false, isInitialized: true });
     } catch (err: any) {
       const message =
-        err.response?.data?.detail || "Invalid login credentials";
+        err.response?.data?.error?.message ||
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        "Invalid login credentials";
       set({ error: message, isLoading: false });
       throw new Error(message);
     }
@@ -61,7 +64,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false, isInitialized: true });
     } catch (err: any) {
       const message =
-        err.response?.data?.detail || "Registration failed. Try again.";
+        err.response?.data?.error?.message ||
+        err.response?.data?.detail ||
+        err.response?.data?.message ||
+        "Registration failed. Try again.";
       set({ error: message, isLoading: false });
       throw new Error(message);
     }
